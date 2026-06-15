@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>კაპიტალის ნაკადები — Institutional Capital Flows</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+:root {
+  --bg: #080c14;
+  --card-bg: #0f1420;
+  --card-border: #1a2040;
+  --text: #e2e4ec;
+  --text-secondary: #8890b0;
+  --accent: #6c5ce7;
+  --glow: #6c5ce766;
+  --red: #e17055;
+  --green: #00b894;
+  --cyan: #00cec9;
+  --amber: #fdcb6e;
+  --pink: #e84393;
+  --blue: #0984e3;
+  --teal: #00d4aa;
+  --white: #dfe6e9;
+  --font: 'Noto Sans Georgian', -apple-system, sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#container { position:relative; width:100%; height:100%; }
+canvas { position:absolute; top:0; left:0; width:100%; height:100%; z-index:1; }
+svg { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; }
+
+/* Pulse heart */
+#heart-pulse {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  z-index: 0; pointer-events: none;
+}
+.heart-ring { position:absolute; border-radius:50%; border:1px solid var(--accent); opacity:0; animation: heartPulse 3s ease-out infinite; }
+.heart-ring:nth-child(1) { width:120px; height:120px; top:50%; left:50%; margin:-60px 0 0 -60px; animation-delay:0s; }
+.heart-ring:nth-child(2) { width:120px; height:120px; top:50%; left:50%; margin:-60px 0 0 -60px; animation-delay:1s; }
+.heart-ring:nth-child(3) { width:120px; height:120px; top:50%; left:50%; margin:-60px 0 0 -60px; animation-delay:2s; }
+@keyframes heartPulse {
+  0% { transform:scale(1); opacity:0.6; }
+  100% { transform:scale(3.5); opacity:0; }
+}
+
+/* Top bar */
+#top-bar {
+  position:absolute; top:20px; left:20px; right:20px; z-index:10;
+  display:flex; justify-content:space-between; align-items:center;
+  pointer-events: none;
+}
+#top-bar > * { pointer-events: all; }
+#site-title { font-size:1.2rem; font-weight:700; letter-spacing:-0.5px; color:var(--text); }
+#site-title span { color:var(--accent); }
+#live-indicator { display:flex; align-items:center; gap:8px; font-size:0.75rem; color:var(--text-secondary); }
+#live-dot { width:8px; height:8px; border-radius:50%; background:var(--green); animation: livePulse 2s ease-in-out infinite; }
+@keyframes livePulse { 0%,100% { opacity:1; box-shadow:0 0 6px var(--green); } 50% { opacity:0.4; box-shadow:0 0 2px var(--green); } }
+
+/* Info panel */
+#info-panel {
+  position:absolute; bottom:24px; left:50%; transform:translateX(-50%); z-index:10;
+  display:flex; gap:12px; flex-wrap:wrap; justify-content:center;
+  max-width:95vw;
+}
+.sector-card {
+  background: var(--card-bg); border:1px solid var(--card-border);
+  border-radius:12px; padding:12px 16px; min-width:140px;
+  cursor:pointer; transition: all 0.3s ease;
+  backdrop-filter: blur(12px);
+}
+.sector-card:hover { border-color:var(--accent); transform:translateY(-2px); box-shadow:0 8px 24px rgba(108,92,231,0.15); }
+.sector-card.active { border-color:var(--accent); box-shadow:0 0 20px var(--glow); }
+.sector-card .sc-name { font-size:0.7rem; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; }
+.sector-card .sc-value { font-size:1.1rem; font-weight:700; color:var(--text); }
+.sector-card .sc-change { font-size:0.7rem; margin-top:2px; }
+.sc-change.up { color:var(--green); }
+.sc-change.down { color:var(--red); }
+
+/* Tooltip */
+#tooltip {
+  position:absolute; z-index:20; pointer-events:none;
+  background:var(--card-bg); border:1px solid var(--accent);
+  border-radius:10px; padding:14px 18px; opacity:0;
+  transition: opacity 0.2s ease;
+  max-width:280px; box-shadow:0 12px 40px rgba(0,0,0,0.5);
+}
+#tooltip.visible { opacity:1; }
+#tooltip .tt-name { font-size:0.95rem; font-weight:700; margin-bottom:6px; color:var(--text); }
+#tooltip .tt-flow { font-size:0.8rem; color:var(--text-secondary); }
+#tooltip .tt-amount { font-size:1.2rem; font-weight:700; color:var(--accent); margin-top:4px; }
+
+/* Legend */
+#legend {
+  position:absolute; top:80px; right:20px; z-index:10;
+  display:flex; flex-direction:column; gap:6px;
+}
+.legend-item { display:flex; align-items:center; gap:8px; font-size:0.7rem; color:var(--text-secondary); }
+.legend-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+/* Zoom hint */
+#zoom-hint {
+  position:absolute; bottom:140px; left:50%; transform:translateX(-50%); z-index:10;
+  font-size:0.65rem; color:var(--text-secondary); opacity:0.6;
+}
+
+/* Mobile adjustments */
+@media (max-width:768px) {
+  #site-title { font-size:1rem; }
+  .sector-card { min-width:100px; padding:8px 12px; }
+  .sector-card .sc-value { font-size:0.9rem; }
+  #legend { top:60px; right:8px; }
+  #top-bar { top:8px; left:8px; right:8px; }
+}
+</style>
+</head>
+<body>
+<div id="container">
+  <canvas id="flow-canvas"></canvas>
+  <svg id="graph-svg"></svg>
+
+  <!-- Heart pulse rings -->
+  <div id="heart-pulse">
+    <div class="heart-ring"></div>
+    <div class="heart-ring"></div>
+    <div class="heart-ring"></div>
+  </div>
+
+  <!-- Top bar -->
+  <div id="top-bar">
+    <div id="site-title">🫀 <span>კაპიტალის</span> ნაკადები</div>
+    <div id="live-indicator"><div id="live-dot"></div> LIVE</div>
+  </div>
+
+  <!-- Legend -->
+  <div id="legend"></div>
+
+  <!-- Info panel -->
+  <div id="info-panel"></div>
+
+  <!-- Tooltip -->
+  <div id="tooltip"><div class="tt-name"></div><div class="tt-flow"></div><div class="tt-amount"></div></div>
+
+  <!-- Zoom hint -->
+  <div id="zoom-hint">🖱️ scroll to zoom &bull; drag to pan &bull; click for details</div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ──── DATA ───────────────────────────────────────────────
+  const COLORS = {
+    ai_infra: '#6c5ce7',
+    ai_vc: '#a29bfe',
+    crypto: '#00b894',
+    defense: '#e17055',
+    biotech: '#74b9ff',
+    climate: '#00cec9',
+    swf: '#fdcb6e',
+    hedge: '#e84393'
+  };
+
+  const CAT_ICONS = {
+    ai_infra: '🏗️', ai_vc: '🧠', crypto: '₿', defense: '🛡️',
+    biotech: '🧬', climate: '🌍', swf: '👑', hedge: '📊'
+  };
+
+  const CAT_LABELS_KA = {
+    ai_infra: 'AI ინფრასტრუქტურა', ai_vc: 'AI სტარტაპები', crypto: 'კრიპტო ETF',
+    defense: 'თავდაცვის ტექ', biotech: 'ბიოტექნოლოგია', climate: 'კლიმატური ტექ',
+    swf: 'სუვერენული ფონდები', hedge: 'ჰეჯ-ფონდები'
+  };
+
+  // Real data (June 2026)
+  const nodes = [
+    // Heart
+    { id:'heart', type:'heart', label:'გლობალური კაპიტალი', radius:28, color:'#fff', fixed:true },
+    // Sector nodes
+    { id:'ai_infra', type:'sector', cat:'ai_infra', label:CAT_LABELS_KA.ai_infra, amount:'$650B', change:'+45%', radius:18, color:COLORS.ai_infra,
+      detail:'Big-5 hyperscaler AI capex: Amazon $200B, Alphabet $175B, Microsoft $145B, Meta $125B, Oracle $50B. ~75% AI-specific = $450B+' },
+    { id:'ai_vc', type:'sector', cat:'ai_vc', label:CAT_LABELS_KA.ai_vc, amount:'$300B', change:'+226%', radius:17, color:COLORS.ai_vc,
+      detail:'Q1 2026 global AI VC: $300B. OpenAI $122B ($852B val), Anthropic $45.6B YTD ($965B val), xAI $20B, Waymo $16B. 80% of all VC = AI' },
+    { id:'crypto', type:'sector', cat:'crypto', label:CAT_LABELS_KA.crypto, amount:'$53B', change:'+18%', radius:13, color:COLORS.crypto,
+      detail:'BTC ETF cumulative inflows $53B (Q1 2026: $18.7B). March 2026: $1.32B inflows breaking 4-month outflow streak. ETH ETFs: -$769M Q1' },
+    { id:'defense', type:'sector', cat:'defense', label:CAT_LABELS_KA.defense, amount:'$14.6B', change:'+52%', radius:14, color:COLORS.defense,
+      detail:'Defense tech VC YTD 2026: $14.6B (surpassed 2025 full-year $9.6B). Anduril $5B at $61B val, Shield AI $1.5B at $12.7B, Helsing $1.2B' },
+    { id:'biotech', type:'sector', cat:'biotech', label:CAT_LABELS_KA.biotech, amount:'$27B', change:'+18%', radius:11, color:COLORS.biotech,
+      detail:'Biotech VC ~$27B annualized. GLP-1 market $80B+ (Lilly). AI drug discovery accelerating. Gene therapy, mRNA platforms expanding' },
+    { id:'climate', type:'sector', cat:'climate', label:CAT_LABELS_KA.climate, amount:'$2.3T', change:'+31%', radius:15, color:COLORS.climate,
+      detail:'Global Energy Transition Investment $2.3T (2025). US Climate VC $29B. Battery storage, nuclear SMRs, fusion attracting billions' },
+    { id:'swf', type:'sector', cat:'swf', label:CAT_LABELS_KA.swf, amount:'$15T', change:'+12%', radius:16, color:COLORS.swf,
+      detail:'Global SWF AUM $15T. AI infra allocation $120B+. Gulf funds (ADIA, Mubadala, PIF), Norway GPFG $1.7T. Shifting from oil → tech' },
+    { id:'hedge', type:'sector', cat:'hedge', label:CAT_LABELS_KA.hedge, amount:'$5.2T', change:'+8%', radius:12, color:COLORS.hedge,
+      detail:'Top hedge fund AUM $5.2T. 13F filings show rotation into AI/semis, out of software. Bridgewater, Citadel, Renaissance leading' }
+  ];
+
+  const edges = [
+    { source:'heart', target:'ai_infra', volume:650, label:'$650B' },
+    { source:'heart', target:'ai_vc', volume:300, label:'$300B' },
+    { source:'heart', target:'crypto', volume:53, label:'$53B' },
+    { source:'heart', target:'defense', volume:14.6, label:'$14.6B' },
+    { source:'heart', target:'biotech', volume:27, label:'$27B' },
+    { source:'heart', target:'climate', volume:2300, label:'$2.3T' },
+    { source:'heart', target:'swf', volume:15000, label:'$15T' },
+    { source:'heart', target:'hedge', volume:5200, label:'$5.2T' },
+    // Cross-sector flows
+    { source:'swf', target:'ai_infra', volume:120, label:'$120B' },
+    { source:'hedge', target:'crypto', volume:18.7, label:'$18.7B' }
+  ];
+
+  // ──── STATE ─────────────────────────────────────────────
+  let simulation = null;
+  let svg, gGraph, gEdges, gNodes;
+  let canvas, ctx;
+  let width, height;
+  let particles = [];
+  let currentTransform = d3.zoomIdentity;
+  let activeSector = null;
+
+  // ──── DIMENSIONS ────────────────────────────────────────
+  function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas = document.getElementById('flow-canvas');
+    canvas.width = width;
+    canvas.height = height;
+    ctx = canvas.getContext('2d');
+  }
+  resize();
+  window.addEventListener('resize', () => {
+    resize();
+    if (simulation) {
+      simulation.force('center', d3.forceCenter(width/2, height/2));
+      simulation.alpha(0.3).restart();
+    }
+  });
+
+  // ──── SVG SETUP ─────────────────────────────────────────
+  svg = d3.select('#graph-svg')
+    .attr('viewBox', [0, 0, width, height]);
+
+  // Gradient definitions for edges
+  const defs = svg.append('defs');
+
+  // Glow filter
+  defs.append('filter').attr('id','glow').html(
+    '<feGaussianBlur stdDeviation="3.5" result="blur"/>'+
+    '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>'
+  );
+
+  // Edge gradients
+  edges.forEach((e,i) => {
+    const sc = nodes.find(n => n.id === e.target);
+    const color = sc ? sc.color : COLORS.ai_infra;
+    const grad = defs.append('linearGradient').attr('id',`edge-grad-${i}`)
+      .attr('gradientUnits','userSpaceOnUse');
+    grad.append('stop').attr('offset','0%').attr('stop-color','#ffffff').attr('stop-opacity',0.4);
+    grad.append('stop').attr('offset','60%').attr('stop-color',color).attr('stop-opacity',0.7);
+    grad.append('stop').attr('offset','100%').attr('stop-color',color).attr('stop-opacity',0.9);
+  });
+
+  // Zoom behavior
+  const zoom = d3.zoom()
+    .scaleExtent([0.3, 3.5])
+    .on('zoom', event => {
+      currentTransform = event.transform;
+      gGraph.attr('transform', event.transform);
+    });
+  svg.call(zoom);
+  svg.on('dblclick.zoom', null); // disable default
+
+  gGraph = svg.append('g');
+  gEdges = gGraph.append('g').attr('class','edges');
+  gNodes = gGraph.append('g').attr('class','nodes');
+
+  // ──── SIMULATION ────────────────────────────────────────
+  function initSimulation() {
+    // Position heart in center
+    nodes[0].x = width/2;
+    nodes[0].y = height/2;
+    nodes[0].fx = width/2;
+    nodes[0].fy = height/2;
+
+    // Position sectors in a circle around heart
+    const sectorNodes = nodes.filter(n => n.type === 'sector');
+    const cx = width/2, cy = height/2;
+    const orbitR = Math.min(width, height) * 0.32;
+    sectorNodes.forEach((n, i) => {
+      const angle = (i / sectorNodes.length) * Math.PI * 2 - Math.PI/2;
+      n.x = cx + orbitR * Math.cos(angle);
+      n.y = cy + orbitR * Math.sin(angle);
+      n.fx = null; n.fy = null;
+    });
+
+    simulation = d3.forceSimulation(nodes)
+      .force('link', d3.forceLink(edges).id(d => d.id).distance(160).strength(0.4))
+      .force('charge', d3.forceManyBody().strength(-400).distanceMin(50).distanceMax(500))
+      .force('center', d3.forceCenter(width/2, height/2).strength(0.05))
+      .force('collide', d3.forceCollide().radius(d => (d.radius||10) + 25).strength(0.8))
+      .force('orbit', function(alpha) {
+        nodes.forEach(d => {
+          if (d.type === 'sector' && !d.pinned) {
+            const dx = d.x - width/2, dy = d.y - height/2;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const targetR = Math.min(width,height) * 0.32;
+            const force = (targetR - dist) * 0.008 * alpha;
+            d.vx += (dx/dist) * force;
+            d.vy += (dy/dist) * force;
+          }
+        });
+      })
+      .alphaDecay(0.003)
+      .velocityDecay(0.4)
+      .on('tick', ticked);
+
+    // Fix heart
+    nodes[0].fx = width/2;
+    nodes[0].fy = height/2;
+  }
+
+  function ticked() {
+    // Update edge paths (curved)
+    gEdges.selectAll('path')
+      .attr('d', d => {
+        const sx = d.source.x, sy = d.source.y;
+        const tx = d.target.x, ty = d.target.y;
+        const dx = tx - sx, dy = ty - sy;
+        const mx = (sx + tx)/2, my = (sy + ty)/2 - Math.sqrt(dx*dx+dy*dy)*0.15;
+        return `M${sx},${sy} Q${mx},${my} ${tx},${ty}`;
+      });
+
+    // Update node positions
+    gNodes.selectAll('g.node-group')
+      .attr('transform', d => `translate(${d.x},${d.y})`);
+  }
+
+  // ──── RENDER EDGES ──────────────────────────────────────
+  function renderEdges() {
+    const edgeGroups = gEdges.selectAll('g.edge-group')
+      .data(edges, (d,i) => i)
+      .join('g')
+      .attr('class','edge-group');
+
+    // Glow path
+    edgeGroups.append('path')
+      .attr('class','edge-glow')
+      .attr('fill','none')
+      .attr('stroke', (d,i) => `url(#edge-grad-${i})`)
+      .attr('stroke-width', d => Math.max(1.5, Math.sqrt(d.volume) * 0.4))
+      .attr('stroke-opacity',0.3)
+      .attr('filter','url(#glow)');
+
+    // Main path
+    edgeGroups.append('path')
+      .attr('class','edge-main')
+      .attr('fill','none')
+      .attr('stroke', (d,i) => `url(#edge-grad-${i})`)
+      .attr('stroke-width', d => Math.max(1, Math.sqrt(d.volume) * 0.25))
+      .attr('stroke-opacity',0.7)
+      .style('pointer-events','stroke')
+      .style('cursor','pointer')
+      .on('mouseenter', function(event, d) {
+        d3.select(this).attr('stroke-opacity',1).attr('stroke-width', d => Math.max(1.5, Math.sqrt(d.volume)*0.5));
+        showTooltip(event, d);
+      })
+      .on('mouseleave', function() {
+        d3.select(this).attr('stroke-opacity',0.7).attr('stroke-width', d => Math.max(1, Math.sqrt(d.volume)*0.25));
+        hideTooltip();
+      });
+  }
+
+  // ──── RENDER NODES ──────────────────────────────────────
+  function renderNodes() {
+    const nodeGroups = gNodes.selectAll('g.node-group')
+      .data(nodes, d => d.id)
+      .join('g')
+      .attr('class','node-group')
+      .style('cursor','pointer')
+      .call(d3.drag()
+        .on('start', (event,d) => {
+          if (d.type === 'heart') return;
+          d.pinned = true;
+          simulation.alphaTarget(0.2).restart();
+        })
+        .on('drag', (event,d) => {
+          if (d.type === 'heart') return;
+          d.x = event.x; d.y = event.y;
+          d.fx = event.x; d.fy = event.y;
+        })
+        .on('end', (event,d) => {
+          if (d.type === 'heart') return;
+          simulation.alphaTarget(0);
+        }))
+      .on('click', (event,d) => {
+        event.stopPropagation();
+        if (d.type === 'sector') focusSector(d);
+      })
+      .on('mouseenter', function(event,d) {
+        if (d.type !== 'sector') return;
+        d3.select(this).select('.node-outer').transition().duration(200).attr('r', d.radius + 6);
+        showNodeTooltip(event, d);
+      })
+      .on('mouseleave', function(event,d) {
+        if (d.type !== 'sector') return;
+        d3.select(this).select('.node-outer').transition().duration(200).attr('r', d.radius);
+        hideTooltip();
+      });
+
+    // Outer glow ring
+    nodeGroups.append('circle')
+      .attr('class','node-glow')
+      .attr('r', d => d.radius + 12)
+      .attr('fill', 'none')
+      .attr('stroke', d => d.color)
+      .attr('stroke-width', 6)
+      .attr('stroke-opacity', 0.1)
+      .attr('filter','url(#glow)');
+
+    // Main circle
+    nodeGroups.append('circle')
+      .attr('class','node-outer')
+      .attr('r', d => d.radius)
+      .attr('fill', d => d.type === 'heart' ? '#1a1530' : d.color + '20')
+      .attr('stroke', d => d.color)
+      .attr('stroke-width', d => d.type === 'heart' ? 2.5 : 1.8)
+      .attr('stroke-opacity', d => d.type === 'heart' ? 0.9 : 0.7);
+
+    // Inner circle (for heart)
+    nodeGroups.filter(d => d.type === 'heart')
+      .append('circle')
+      .attr('class','node-inner')
+      .attr('r', d => d.radius * 0.55)
+      .attr('fill', 'none')
+      .attr('stroke', '#ffffff')
+      .attr('stroke-width', 1.5)
+      .attr('stroke-opacity', 0.4)
+      .attr('stroke-dasharray','6,4');
+
+    // Icon text
+    nodeGroups.filter(d => d.type === 'sector')
+      .append('text')
+      .attr('class','node-icon')
+      .attr('text-anchor','middle')
+      .attr('dominant-baseline','middle')
+      .attr('font-size', d => d.radius * 0.8)
+      .style('pointer-events','none')
+      .text(d => CAT_ICONS[d.cat] || '●');
+
+    // Heart icon
+    nodeGroups.filter(d => d.type === 'heart')
+      .append('text')
+      .attr('class','node-icon')
+      .attr('text-anchor','middle')
+      .attr('dominant-baseline','middle')
+      .attr('font-size','24px')
+      .style('pointer-events','none')
+      .text('🫀');
+
+    // Labels
+    nodeGroups.append('text')
+      .attr('class','node-label')
+      .attr('text-anchor','middle')
+      .attr('dy', d => d.radius + 18)
+      .attr('font-size', d => d.type === 'heart' ? '0.75rem' : '0.65rem')
+      .attr('fill', '#c0c8e0')
+      .attr('font-weight', d => d.type === 'heart' ? '600' : '500')
+      .style('pointer-events','none')
+      .text(d => d.label);
+
+    // Amount labels for sectors
+    nodeGroups.filter(d => d.type === 'sector')
+      .append('text')
+      .attr('class','node-amount')
+      .attr('text-anchor','middle')
+      .attr('dy', d => d.radius + 32)
+      .attr('font-size','0.6rem')
+      .attr('fill', d => d.color)
+      .attr('font-weight','600')
+      .style('pointer-events','none')
+      .text(d => d.amount);
+  }
+
+  // ──── PARTICLES ─────────────────────────────────────────
+  function createParticles() {
+    particles = [];
+    edges.forEach((edge, ei) => {
+      const vol = edge.volume;
+      const count = Math.max(3, Math.min(40, Math.floor(Math.sqrt(vol) * 1.2)));
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          edgeIndex: ei,
+          t: Math.random(),
+          speed: 0.0004 + Math.random() * 0.0012 * (1 + Math.log10(Math.max(1, vol)) * 0.3),
+          size: 0.8 + Math.random() * 2.2,
+          opacity: 0.3 + Math.random() * 0.6
+        });
+      }
+    });
+  }
+
+  function animateParticles() {
+    if (!canvas || !ctx) return;
+    ctx.clearRect(0, 0, width, height);
+
+    // Subtle ambient particles (background)
+    const time = Date.now() * 0.001;
+    for (let i = 0; i < 15; i++) {
+      const ax = (Math.sin(time * 0.7 + i * 2.3) * 0.5 + 0.5) * width;
+      const ay = (Math.cos(time * 0.6 + i * 1.9) * 0.5 + 0.5) * height;
+      ctx.beginPath();
+      ctx.arc(ax, ay, 0.5, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(108,92,231,${0.05 + Math.sin(time+i)*0.03})`;
+      ctx.fill();
+    }
+
+    // Flow particles along edges
+    particles.forEach(p => {
+      const edge = edges[p.edgeIndex];
+      const src = nodes.find(n => n.id === (typeof edge.source === 'object' ? edge.source.id : edge.source));
+      const tgt = nodes.find(n => n.id === (typeof edge.target === 'object' ? edge.target.id : edge.target));
+      if (!src || !tgt) return;
+
+      // Advance
+      p.t += p.speed;
+      if (p.t > 1.05) { p.t = -0.05; }
+
+      // Quadratic bezier interpolation
+      const t = Math.max(0, Math.min(1, p.t));
+      const sx = src.x, sy = src.y, tx = tgt.x, ty = tgt.y;
+      const mx = (sx + tx)/2, my = (sy + ty)/2 - Math.sqrt((tx-sx)*(tx-sx)+(ty-sy)*(ty-sy))*0.15;
+
+      const x = (1-t)*(1-t)*sx + 2*(1-t)*t*mx + t*t*tx;
+      const y = (1-t)*(1-t)*sy + 2*(1-t)*t*my + t*t*ty;
+
+      // Fade at edges
+      let alpha = p.opacity;
+      if (t < 0.1) alpha *= t / 0.1;
+      if (t > 0.9) alpha *= (1-t) / 0.1;
+
+      const sc = tgt;
+      const color = sc.color || COLORS.ai_infra;
+
+      // Glow
+      ctx.beginPath();
+      ctx.arc(x, y, p.size * 2.5, 0, Math.PI*2);
+      ctx.fillStyle = color.replace(')','') + `,${alpha * 0.15})`.replace('#','rgba(');
+      // Actually just use hex with opacity
+      ctx.fillStyle = hexToRgba(color, alpha * 0.12);
+      ctx.fill();
+
+      // Core
+      ctx.beginPath();
+      ctx.arc(x, y, p.size, 0, Math.PI*2);
+      ctx.fillStyle = hexToRgba(color, alpha);
+      ctx.fill();
+    });
+
+    requestAnimationFrame(animateParticles);
+  }
+
+  function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1,3), 16);
+    const g = parseInt(hex.slice(3,5), 16);
+    const b = parseInt(hex.slice(5,7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  // ──── UI ────────────────────────────────────────────────
+  function buildInfoPanel() {
+    const panel = document.getElementById('info-panel');
+    const sectorNodes = nodes.filter(n => n.type === 'sector');
+    panel.innerHTML = sectorNodes.map(n => `
+      <div class="sector-card" data-sector="${n.id}" onclick="window._focusSector('${n.id}')">
+        <div class="sc-name" style="color:${n.color}">${CAT_ICONS[n.cat]} ${n.label}</div>
+        <div class="sc-value">${n.amount}</div>
+        <div class="sc-change ${n.change.startsWith('+')?'up':'down'}">${n.change} YoY</div>
+      </div>
+    `).join('');
+  }
+
+  function buildLegend() {
+    const legend = document.getElementById('legend');
+    legend.innerHTML = Object.entries(COLORS).map(([key,color]) => `
+      <div class="legend-item">
+        <div class="legend-dot" style="background:${color}"></div>
+        ${CAT_LABELS_KA[key]}
+      </div>
+    `).join('');
+  }
+
+  function showTooltip(event, edge) {
+    const sc = nodes.find(n => n.id === (typeof edge.target === 'object' ? edge.target.id : edge.target));
+    const tt = document.getElementById('tooltip');
+    tt.querySelector('.tt-name').textContent = sc ? sc.label : '';
+    tt.querySelector('.tt-flow').textContent = edge.label ? `ნაკადი: ${edge.label}` : '';
+    tt.querySelector('.tt-amount').textContent = '';
+    tt.style.left = (event.pageX + 15) + 'px';
+    tt.style.top = (event.pageY - 15) + 'px';
+    tt.classList.add('visible');
+  }
+
+  function showNodeTooltip(event, d) {
+    const tt = document.getElementById('tooltip');
+    tt.querySelector('.tt-name').textContent = d.label;
+    tt.querySelector('.tt-flow').textContent = d.amount;
+    tt.querySelector('.tt-amount').textContent = d.change + ' YoY';
+    tt.style.left = (event.pageX + 15) + 'px';
+    tt.style.top = (event.pageY - 15) + 'px';
+    tt.classList.add('visible');
+  }
+
+  function hideTooltip() {
+    document.getElementById('tooltip').classList.remove('visible');
+  }
+
+  function focusSector(d) {
+    // Highlight the sector
+    document.querySelectorAll('.sector-card').forEach(c => c.classList.remove('active'));
+    const card = document.querySelector(`[data-sector="${d.id}"]`);
+    if (card) card.classList.add('active');
+
+    // Center on the node
+    const transform = d3.zoomIdentity
+      .translate(width/2, height/2)
+      .scale(1.6)
+      .translate(-d.x, -d.y);
+    svg.transition().duration(800).call(zoom.transform, transform);
+
+    // Show detail tooltip
+    const tt = document.getElementById('tooltip');
+    tt.querySelector('.tt-name').textContent = d.label;
+    tt.querySelector('.tt-flow').textContent = d.amount;
+    tt.querySelector('.tt-amount').textContent = d.detail || '';
+    tt.style.left = Math.min(window.innerWidth - 300, Math.max(20, d.x * 1.6)) + 'px';
+    tt.style.top = Math.min(window.innerHeight - 160, Math.max(80, (d.y - 60) * 1.6)) + 'px';
+    tt.classList.add('visible');
+
+    // Auto-hide after 6s
+    clearTimeout(window._tooltipTimer);
+    window._tooltipTimer = setTimeout(hideTooltip, 6000);
+
+    activeSector = d.id;
+  }
+
+  // Expose for onclick in HTML
+  window._focusSector = function(id) {
+    const d = nodes.find(n => n.id === id);
+    if (d) focusSector(d);
+  };
+
+  // Click on background to reset
+  svg.on('click', () => {
+    hideTooltip();
+    document.querySelectorAll('.sector-card').forEach(c => c.classList.remove('active'));
+    activeSector = null;
+  });
+
+  // Heart animation — subtle breathing
+  function heartBreathing() {
+    const heartNode = gNodes.selectAll('g.node-group').filter(d => d.type === 'heart');
+    if (heartNode.empty()) return;
+
+    const inner = heartNode.select('.node-inner');
+    if (inner.empty()) return;
+
+    const t = Date.now() * 0.001;
+    const scale = 1 + Math.sin(t * 1.3) * 0.08 + Math.sin(t * 2.1) * 0.04;
+    inner.attr('r', nodes[0].radius * 0.55 * scale);
+
+    requestAnimationFrame(() => {
+      setTimeout(heartBreathing, 50);
+    });
+  }
+
+  // ──── INIT ──────────────────────────────────────────────
+  function init() {
+    resize();
+    renderEdges();
+    renderNodes();
+    initSimulation();
+    buildInfoPanel();
+    buildLegend();
+    createParticles();
+    animateParticles();
+    heartBreathing();
+
+    // Gentle auto-rotation
+    let autoRotateAngle = 0;
+    setInterval(() => {
+      if (!simulation) return;
+      autoRotateAngle += 0.003;
+      nodes.forEach(d => {
+        if (d.type === 'sector' && !d.pinned) {
+          const dx = d.x - width/2, dy = d.y - height/2;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          const angle = Math.atan2(dy, dx) + 0.003;
+          d.x = width/2 + dist * Math.cos(angle);
+          d.y = height/2 + dist * Math.sin(angle);
+        }
+      });
+      if (simulation) simulation.alpha(Math.max(simulation.alpha(), 0.01)).restart();
+    }, 80);
+  }
+
+  init();
+
+})();
+</script>
+</body>
+</html>
