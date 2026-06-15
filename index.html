@@ -280,6 +280,7 @@ svg { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; touc
   let canvas, ctx;
   let width, height;
   let particles = [];
+  let fixedPositions = new Map(); // frozen snapshot for canvas — never follows live data
   let currentTransform = d3.zoomIdentity;
   let activeSector = null;
 
@@ -298,6 +299,7 @@ svg { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; touc
     if (simulation) {
       simulation.force('center', d3.forceCenter(width/2, height/2));
       simulation.alpha(0.3).restart();
+      setTimeout(capturePositions, 1500);
     }
   });
 
@@ -574,6 +576,13 @@ svg { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; touc
   }
 
   // ──── PARTICLES ─────────────────────────────────────────
+  function capturePositions() {
+    fixedPositions.clear();
+    nodes.forEach(n => {
+      fixedPositions.set(n.id, { x: n.x, y: n.y });
+    });
+  }
+
   function createParticles() {
     particles = [];
     edges.forEach((edge, ei) => {
@@ -606,11 +615,16 @@ svg { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; touc
       ctx.fill();
     }
 
-    // Flow particles along edges
+    // Flow particles along edges — use FROZEN positions (never follow drag/zoom)
+    const useFixed = fixedPositions.size > 0;
     particles.forEach(p => {
       const edge = edges[p.edgeIndex];
-      const src = nodes.find(n => n.id === (typeof edge.source === 'object' ? edge.source.id : edge.source));
-      const tgt = nodes.find(n => n.id === (typeof edge.target === 'object' ? edge.target.id : edge.target));
+      const srcId = typeof edge.source === 'object' ? edge.source.id : edge.source;
+      const tgtId = typeof edge.target === 'object' ? edge.target.id : edge.target;
+      const sp = useFixed ? fixedPositions.get(srcId) : null;
+      const tp = useFixed ? fixedPositions.get(tgtId) : null;
+      const src = sp || nodes.find(n => n.id === srcId);
+      const tgt = tp || nodes.find(n => n.id === tgtId);
       if (!src || !tgt) return;
 
       // Advance
@@ -630,8 +644,7 @@ svg { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; touc
       if (t < 0.1) alpha *= t / 0.1;
       if (t > 0.9) alpha *= (1-t) / 0.1;
 
-      const sc = tgt;
-      const color = sc.color || COLORS.ai_infra;
+      const color = (nodes.find(n => n.id === tgtId) || {}).color || COLORS.ai_infra;
 
       // Glow
       ctx.beginPath();
@@ -801,6 +814,8 @@ svg { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; touc
     buildInfoPanel();
     buildLegend();
     createParticles();
+    // Let simulation settle, then freeze positions for canvas
+    setTimeout(capturePositions, 1500);
     animateParticles();
     heartBreathing();
 
