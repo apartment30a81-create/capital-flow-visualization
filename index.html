@@ -458,15 +458,30 @@ svg { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; touc
         .on('start', (event,d) => {
           if (d.type === 'heart') return;
           d.pinned = true;
-          simulation.alphaTarget(0.2).restart();
+          d._dragging = true;
+          simulation.alphaTarget(0.1).restart();
         })
         .on('drag', (event,d) => {
           if (d.type === 'heart') return;
           d.x = event.x; d.y = event.y;
           d.fx = event.x; d.fy = event.y;
+          // Update SVG immediately — don't wait for tick
+          gNodes.selectAll('g.node-group')
+            .filter(n => n.id === d.id)
+            .attr('transform', `translate(${d.x},${d.y})`);
+          // Update all edge paths that connect to this node
+          gEdges.selectAll('g.edge-group path')
+            .attr('d', e => {
+              const sx = e.source.x, sy = e.source.y;
+              const tx = e.target.x, ty = e.target.y;
+              const dx = tx - sx, dy = ty - sy;
+              const mx = (sx + tx)/2, my = (sy + ty)/2 - Math.sqrt(dx*dx+dy*dy)*0.15;
+              return `M${sx},${sy} Q${mx},${my} ${tx},${ty}`;
+            });
         })
         .on('end', (event,d) => {
           if (d.type === 'heart') return;
+          d._dragging = false;
           simulation.alphaTarget(0);
         }))
       .on('click', (event,d) => {
