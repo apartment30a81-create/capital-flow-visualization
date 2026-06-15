@@ -615,16 +615,11 @@ svg { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; touc
       ctx.fill();
     }
 
-    // Flow particles along edges — use FROZEN positions (never follow drag/zoom)
-    const useFixed = fixedPositions.size > 0;
+    // Flow particles along edges — follow live node positions (connected to graph)
     particles.forEach(p => {
       const edge = edges[p.edgeIndex];
-      const srcId = typeof edge.source === 'object' ? edge.source.id : edge.source;
-      const tgtId = typeof edge.target === 'object' ? edge.target.id : edge.target;
-      const sp = useFixed ? fixedPositions.get(srcId) : null;
-      const tp = useFixed ? fixedPositions.get(tgtId) : null;
-      const src = sp || nodes.find(n => n.id === srcId);
-      const tgt = tp || nodes.find(n => n.id === tgtId);
+      const src = nodes.find(n => n.id === (typeof edge.source === 'object' ? edge.source.id : edge.source));
+      const tgt = nodes.find(n => n.id === (typeof edge.target === 'object' ? edge.target.id : edge.target));
       if (!src || !tgt) return;
 
       // Advance
@@ -644,7 +639,7 @@ svg { position:absolute; top:0; left:0; width:100%; height:100%; z-index:2; touc
       if (t < 0.1) alpha *= t / 0.1;
       if (t > 0.9) alpha *= (1-t) / 0.1;
 
-      const color = (nodes.find(n => n.id === tgtId) || {}).color || COLORS.ai_infra;
+      const color = tgt.color || COLORS.ai_infra;
 
       // Glow
       ctx.beginPath();
